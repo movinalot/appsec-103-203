@@ -79,6 +79,8 @@ CLOUDINIT
 
 }
 
+data "azurerm_subscription" "subscription" {}
+
 resource "random_id" "id" {
 
   keepers = {
@@ -189,13 +191,13 @@ resource "azurerm_network_security_rule" "network_security_rule_ingress" {
 }
 
 resource "azurerm_virtual_network" "virtual_network" {
-  
+
   resource_group_name = azurerm_resource_group.resource_group.name
   location            = azurerm_resource_group.resource_group.location
 
   address_space = ["10.0.0.0/16", "10.1.1.0/24", "10.1.2.0/24", "10.1.3.0/24"]
-  
-  name          = "AppSec103-203-FortiADC-vnet"
+
+  name = "AppSec103-203-FortiADC-vnet"
 }
 
 resource "azurerm_subnet" "subnet" {
@@ -203,13 +205,13 @@ resource "azurerm_subnet" "subnet" {
 
   resource_group_name = azurerm_resource_group.resource_group.name
 
-  name                 = each.value.name
-  address_prefixes     = [each.value.address_prefix]
+  name             = each.value.name
+  address_prefixes = [each.value.address_prefix]
 
   virtual_network_name = azurerm_virtual_network.virtual_network.name
 }
 
-resource "azurerm_bastion_host" "_bastion_host" {
+resource "azurerm_bastion_host" "bastion_host" {
   resource_group_name = azurerm_resource_group.resource_group.name
   location            = azurerm_resource_group.resource_group.location
 
@@ -479,7 +481,7 @@ resource "azurerm_linux_virtual_machine" "app-server-1" {
 
   network_interface_ids = [azurerm_network_interface.network_interface-app-server-1.id]
   secure_boot_enabled   = true
-  size                  = "Standard_D4s_v4"
+  size                  = "Standard_D2s_v4"
 
   vtpm_enabled = true
 

@@ -10,7 +10,6 @@ variable "password" {
 
 variable "environments" {
   description = "List of environments"
-  type        = map(object({ rg-prefix = string }))
 }
 
 variable "fortiflexvm_account_id" {

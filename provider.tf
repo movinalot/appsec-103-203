@@ -19,6 +19,7 @@ provider "azurerm" {
     }
   }
 }
+
 provider "fortiflexvm" {
   # FortiFLEX VM provider configuration username and password are pulled from environment variables
   # export FORTIFLEX_ACCESS_USERNAME=""
