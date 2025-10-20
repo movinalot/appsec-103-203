@@ -1,9 +1,9 @@
 locals {
-  username                = var.username
+  vm_username             = var.vm_username
   password                = var.password
   rg-prefix               = var.rg-prefix
-  resource_group_name     = "${local.rg-prefix}-AppSec103-203-FortiADC"
-  resource_group_location = "westus"
+  resource_group_name     = "${local.rg-prefix}-${var.rg-suffix}"
+  resource_group_location = var.location
 
   shared_image_versions = {
     "Client"     = { resource_group_name = "xperts-2025-appsec-103-203-utility", gallery_name = "usxperts2025", image_name = "Client", name = "latest" }
@@ -12,10 +12,10 @@ locals {
   }
 
   public_ips = {
-    "Azure-Bastion-PUB" = { name = "Azure-Bastion-PUB" }
-    "FAD-Primary-PUB"   = { name = "FAD-Primary-PUB" }
-    "FAD-Secondary-PUB" = { name = "FAD-Secondary-PUB" }
-    "FGT-1-PUB"         = { name = "FGT-1-PUB" }
+    "Azure-Bastion-PUB" = { name = "Azure-Bastion-PUB", sku = "Standard", allocation_method = "Static", ddos_protection_mode = "Disabled" }
+    "FAD-Primary-PUB"   = { name = "FAD-Primary-PUB", sku = "Standard", allocation_method = "Static", ddos_protection_mode = "Disabled" }
+    "FAD-Secondary-PUB" = { name = "FAD-Secondary-PUB", sku = "Standard", allocation_method = "Static", ddos_protection_mode = "Disabled" }
+    "FGT-1-PUB"         = { name = "FGT-1-PUB", sku = "Standard", allocation_method = "Static", ddos_protection_mode = "Disabled" }
   }
 
   subnets = {
@@ -77,6 +77,50 @@ CLOUDINIT
 }
 CLOUDINIT
 
+  bastion_hosts = {
+    "bastion-host" = {
+      resource_group_name = azurerm_resource_group.resource_group.name
+      location            = azurerm_resource_group.resource_group.location
+
+      name                   = "bastion-host"
+      sku                    = "Standard"
+      shareable_link_enabled = true
+
+      ip_configuration = {
+        name                 = "ipconfig1"
+        subnet_id            = azurerm_subnet.subnet["AzureBastionSubnet"].id
+        public_ip_address_id = azurerm_public_ip.public_ip["Azure-Bastion-PUB"].id
+      }
+    }
+  }
+
+  resource_action_create_links = {
+    create_link = {
+      type        = "Microsoft.Network/bastionHosts@2022-05-01"
+      name        = "createLink"
+      resource_id = azurerm_bastion_host.bastion_host["bastion-host"].id
+      action      = "createShareableLinks"
+      body = {
+        vms = [
+          {
+            vm = {
+              id = azurerm_linux_virtual_machine.client.id
+            }
+          }
+        ]
+      }
+    }
+  }
+
+  resource_action_get_links = {
+    get_link = {
+      type                   = "Microsoft.Network/bastionHosts@2022-05-01"
+      name                   = "getLink"
+      resource_id            = azurerm_bastion_host.bastion_host["bastion-host"].id
+      action                 = "getShareableLinks"
+      response_export_values = ["*"]
+    }
+  }
 }
 
 data "azurerm_subscription" "subscription" {}
@@ -144,9 +188,9 @@ resource "azurerm_public_ip" "public_ip" {
   resource_group_name = azurerm_resource_group.resource_group.name
   location            = azurerm_resource_group.resource_group.location
 
-  allocation_method    = "Static"
-  ddos_protection_mode = "Disabled"
   name                 = each.value.name
+  allocation_method    = each.value.allocation_method
+  ddos_protection_mode = each.value.ddos_protection_mode
 }
 
 resource "azurerm_network_security_group" "network_security_group" {
@@ -209,24 +253,6 @@ resource "azurerm_subnet" "subnet" {
   address_prefixes = [each.value.address_prefix]
 
   virtual_network_name = azurerm_virtual_network.virtual_network.name
-}
-
-resource "azurerm_bastion_host" "bastion_host" {
-  resource_group_name = azurerm_resource_group.resource_group.name
-  location            = azurerm_resource_group.resource_group.location
-
-  ip_connect_enabled     = true
-  name                   = "Azure-Bastion"
-  scale_units            = 2
-  shareable_link_enabled = true
-  sku                    = "Standard"
-  tunneling_enabled      = true
-
-  ip_configuration {
-    name                 = "ipconfig"
-    subnet_id            = azurerm_subnet.subnet["AzureBastionSubnet"].id
-    public_ip_address_id = azurerm_public_ip.public_ip["Azure-Bastion-PUB"].id
-  }
 }
 
 resource "azurerm_network_interface" "network_interface-app-server-1" {
@@ -453,14 +479,14 @@ resource "azurerm_linux_virtual_machine" "fgtvm" {
     storage_account_type = "Premium_LRS"
   }
 
-  admin_username = local.username
+  admin_username = local.vm_username
   admin_password = local.password
 
   custom_data = base64encode(templatefile("${path.module}/fortios.tpl", {
     fgt_vm_name           = "FGT-1"
     fgt_license_file      = ""
     fgt_license_fortiflex = ""
-    fgt_username          = local.username
+    fgt_username          = local.vm_username
     fgt_ssh_public_key    = ""
   }))
 
@@ -476,7 +502,7 @@ resource "azurerm_linux_virtual_machine" "app-server-1" {
   name = "APP-Server1"
 
   admin_password                  = local.password
-  admin_username                  = local.username
+  admin_username                  = local.vm_username
   disable_password_authentication = false
 
   network_interface_ids = [azurerm_network_interface.network_interface-app-server-1.id]
@@ -505,7 +531,7 @@ resource "azurerm_linux_virtual_machine" "app-server-2" {
   name = "APP-Server2"
 
   admin_password                  = local.password
-  admin_username                  = local.username
+  admin_username                  = local.vm_username
   disable_password_authentication = false
 
   network_interface_ids = [azurerm_network_interface.network_interface-app-server-2.id]
@@ -534,7 +560,7 @@ resource "azurerm_linux_virtual_machine" "client" {
   name = "Client"
 
   admin_password                  = local.password
-  admin_username                  = local.username
+  admin_username                  = local.vm_username
   disable_password_authentication = false
 
   network_interface_ids = [azurerm_network_interface.network_interface-client.id]
@@ -552,7 +578,6 @@ resource "azurerm_linux_virtual_machine" "client" {
     caching              = "ReadWrite"
     storage_account_type = "Premium_LRS"
   }
-  # source_image_id = "/subscriptions/02b50049-c444-416f-a126-3e4c815501ac/resourceGroups/xperts-2025-appsec-103-203-utility/providers/Microsoft.Compute/galleries/usxperts2025/images/Client/versions/0.0.9"
   source_image_id = data.azurerm_shared_image_version.shared_image_version["Client"].id
 }
 
@@ -563,7 +588,7 @@ resource "azurerm_linux_virtual_machine" "fad-primary" {
   name = "FAD-Primary"
 
   admin_password                  = local.password
-  admin_username                  = local.username
+  admin_username                  = local.vm_username
   disable_password_authentication = false
 
   network_interface_ids = [azurerm_network_interface.network_interface-fad-primary-p1.id, azurerm_network_interface.network_interface-fad-primary-p2.id]
@@ -621,7 +646,7 @@ resource "azurerm_linux_virtual_machine" "fad-secondary" {
   name = "FAD-Secondary"
 
   admin_password                  = local.password
-  admin_username                  = local.username
+  admin_username                  = local.vm_username
   disable_password_authentication = false
 
   network_interface_ids = [azurerm_network_interface.network_interface-fad-secondary-p1.id, azurerm_network_interface.network_interface-fad-secondary-p2.id]
@@ -667,4 +692,44 @@ resource "azurerm_virtual_machine_data_disk_attachment" "fad-secondary-data-disk
   lun                = 0
   managed_disk_id    = azurerm_managed_disk.managed_disk-fad-secondary.id
   virtual_machine_id = azurerm_linux_virtual_machine.fad-secondary.id
+}
+
+resource "azurerm_bastion_host" "bastion_host" {
+  for_each = local.bastion_hosts
+
+  resource_group_name = each.value.resource_group_name
+  location            = each.value.location
+
+  name                   = each.value.name
+  sku                    = each.value.sku
+  shareable_link_enabled = each.value.shareable_link_enabled
+
+  ip_configuration {
+    name                 = each.value.ip_configuration.name
+    subnet_id            = each.value.ip_configuration.subnet_id
+    public_ip_address_id = each.value.ip_configuration.public_ip_address_id
+  }
+}
+
+resource "azapi_resource_action" "resource_action_create_link" {
+  for_each = local.resource_action_create_links
+
+  type        = each.value.type
+  resource_id = each.value.resource_id
+  action      = each.value.action
+  body        = each.value.body
+}
+
+data "azapi_resource_action" "resource_action_get_link" {
+  for_each = local.resource_action_get_links
+
+  type                   = each.value.type
+  resource_id            = each.value.resource_id
+  action                 = each.value.action
+  response_export_values = each.value.response_export_values
+  depends_on             = [azapi_resource_action.resource_action_create_link["create_link"]]
+}
+
+output "bastion_shareable_links" {
+  value = data.azapi_resource_action.resource_action_get_link["get_link"].output
 }
